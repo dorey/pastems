@@ -44,6 +44,9 @@ const App = () => {
   const [contentType, setContentType] = useState('text');
   const [decryptedContent, setDecryptedContent] = useState('');
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [isFormLocked, setIsFormLocked] = useState(false);
+  const [showPopup, setShowPopup] = useState(false);
+  const [decryptionError, setDecryptionError] = useState(null);
 
   useEffect(() => {
     // Check if we're viewing a message
@@ -58,7 +61,7 @@ const App = () => {
         // We have both uid and key, attempt to fetch and decrypt
         fetchAndDecryptMessage(uid, hash);
       } else {
-        setStatusMessage('Cannot decrypt message: missing decryption key');
+        setDecryptionError('Cannot decrypt message: missing decryption key');
       }
     }
   }, []);
@@ -271,6 +274,8 @@ const App = () => {
       const shareableUrl = `${window.location.origin}/txt/${uid}#${key}`;
       setShareableUrl(shareableUrl);
       setStatusMessage('Message created successfully!');
+      setIsFormLocked(true);
+      setShowPopup(true);
       
     } catch (error) {
       console.error('Error creating message:', error);
@@ -281,17 +286,18 @@ const App = () => {
   const fetchAndDecryptMessage = async (uid, key) => {
     try {
       setIsDecrypting(true);
-      setStatusMessage('Fetching encrypted message...');
+      setDecryptionError(null);
       
       // Fetch the encrypted message
       const response = await fetch(`/api/paste/${uid}`);
       
       if (!response.ok) {
         if (response.status === 404) {
+          setIsDecrypting(false); // Stop loading state
           setMode('notFound');
-          setStatusMessage('Message not found or has expired');
+          return;
         } else {
-          throw new Error('Failed to fetch message');
+          throw new Error(`Failed to fetch message: ${response.status} ${response.statusText}`);
         }
         return;
       }
@@ -299,45 +305,56 @@ const App = () => {
       const { encryptedData, expiresAt, burnAfterReading: burnFlag } = await response.json();
       
       // Decrypt the message
-      setStatusMessage('Decrypting message...');
-      const decryptedData = await decryptMessage(encryptedData, key);
+      try {
+        const decryptedData = await decryptMessage(encryptedData, key);
+        
+        if (!decryptedData) {
+          setDecryptionError('Failed to decrypt message. Invalid key or corrupted data.');
+          setIsDecrypting(false);
+          return;
+        }
+        
+        // Parse the decrypted data
+        const messageData = JSON.parse(decryptedData);
+        const { content, metadata } = messageData;
       
-      if (!decryptedData) {
-        setStatusMessage('Failed to decrypt message. Invalid key.');
-        return;
+        // Set title and content
+        document.title = metadata.title || 'Encrypted Message';
+        setDecryptedContent(content);
+        setContentType(metadata.dataType || 'text');
+        
+        // Calculate expiration info
+        const expireDate = new Date(expiresAt);
+        const now = new Date();
+        const diffTime = Math.abs(expireDate - now);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        setMessageDetails({
+          title: metadata.title || 'Encrypted Message',
+          expiresIn: `${diffDays} day${diffDays !== 1 ? 's' : ''}`,
+          burnAfterReading: burnFlag
+        });
+        
+        setIsDecrypting(false);
+        
+        // If burn after reading is enabled, start countdown
+        if (burnFlag) {
+          setMode('countdown');
+        }
+      } catch (error) {
+        console.error('Decryption failed:', error);
+        
+        if (error.name === 'OperationError') {
+          setDecryptionError('Decryption failed: Invalid key or URL. The message cannot be decrypted.');
+        } else {
+          setDecryptionError(`Decryption failed: ${error.message}`);
+        }
+        
+        setIsDecrypting(false);
       }
-      
-      // Parse the decrypted data
-      const messageData = JSON.parse(decryptedData);
-      const { content, metadata } = messageData;
-      
-      // Set title and content
-      document.title = metadata.title || 'Encrypted Message';
-      setDecryptedContent(content);
-      setContentType(metadata.dataType || 'text');
-      
-      // Calculate expiration info
-      const expireDate = new Date(expiresAt);
-      const now = new Date();
-      const diffTime = Math.abs(expireDate - now);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      setMessageDetails({
-        title: metadata.title || 'Encrypted Message',
-        expiresIn: `${diffDays} day${diffDays !== 1 ? 's' : ''}`,
-        burnAfterReading: burnFlag
-      });
-      
-      setIsDecrypting(false);
-      
-      // If burn after reading is enabled, start countdown
-      if (burnFlag) {
-        setMode('countdown');
-      }
-      
     } catch (error) {
-      console.error('Error fetching or decrypting message:', error);
-      setStatusMessage('Error: ' + error.message);
+      console.error('Error fetching message:', error);
+      setDecryptionError('Error: ' + error.message);
       setIsDecrypting(false);
     }
   };
@@ -369,15 +386,15 @@ const App = () => {
   const renderCreateForm = () => (
     <div className="create-container">
       <h1>WRITE MESSAGE</h1>
-      <form onSubmit={handleCreateMessage}>
+      <form onSubmit={handleCreateMessage} className={isFormLocked ? 'readonly-form' : ''}>
         <div className="form-group">
-          <label htmlFor="title">Title (optional):</label>
           <input
             type="text"
             id="title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title for your message"
+            placeholder="Title (optional)"
+            readOnly={isFormLocked}
           />
         </div>
         
@@ -389,6 +406,7 @@ const App = () => {
             placeholder="Enter your message here (up to 1MB)"
             className="message-textarea"
             required
+            readOnly={isFormLocked}
           />
         </div>
         
@@ -403,8 +421,21 @@ const App = () => {
                 value="day"
                 checked={expirationPeriod === 'day'}
                 onChange={(e) => setExpirationPeriod(e.target.value)}
+                disabled={isFormLocked}
               />
               <label htmlFor="exp-day">1 day</label>
+            </div>
+            <div className="expiration-option">
+              <input
+                type="radio"
+                id="exp-week"
+                name="expiration"
+                value="week"
+                checked={expirationPeriod === 'week'}
+                onChange={(e) => setExpirationPeriod(e.target.value)}
+                disabled={isFormLocked}
+              />
+              <label htmlFor="exp-week">1 week</label>
             </div>
             <div className="expiration-option">
               <input
@@ -414,6 +445,7 @@ const App = () => {
                 value="month"
                 checked={expirationPeriod === 'month'}
                 onChange={(e) => setExpirationPeriod(e.target.value)}
+                disabled={isFormLocked}
               />
               <label htmlFor="exp-month">1 month</label>
             </div>
@@ -425,6 +457,7 @@ const App = () => {
                 value="year"
                 checked={expirationPeriod === 'year'}
                 onChange={(e) => setExpirationPeriod(e.target.value)}
+                disabled={isFormLocked}
               />
               <label htmlFor="exp-year">1 year</label>
             </div>
@@ -437,36 +470,63 @@ const App = () => {
             id="burn"
             checked={burnAfterReading}
             onChange={(e) => setBurnAfterReading(e.target.checked)}
+            disabled={isFormLocked}
           />
           <label htmlFor="burn">Read Once</label>
         </div>
         
-        <button type="submit" className="submit-btn">ENCRYPT</button>
+        <button 
+          type="submit" 
+          className={`push-button submit-btn ${isFormLocked ? 'button-disabled' : ''}`}
+          disabled={isFormLocked}
+        >
+          <span className="shadow"></span>
+          <span className="edge"></span>
+          <span className="front">{isFormLocked ? 'ENCRYPTED' : 'ENCRYPT'}</span>
+        </button>
       </form>
       
-      {shareableUrl && (
-        <div className="share-container">
-          <h2>Shareable Link:</h2>
-          <div className="url-display">
-            <input
-              type="text"
-              value={shareableUrl}
-              readOnly
-              onClick={(e) => e.target.select()}
-            />
-            <button
+      {/* Share Popup */}
+      {showPopup && shareableUrl && (
+        <div className="share-popup-overlay">
+          <div className="share-popup">
+            <button 
+              className="close-popup-btn" 
               onClick={() => {
-                navigator.clipboard.writeText(shareableUrl);
-                setStatusMessage('URL copied to clipboard!');
+                setShowPopup(false);
+                setIsFormLocked(false);
               }}
             >
-              Copy
+              ×
             </button>
+            <h2>Message created successfully!</h2>
+            <p>Share this link with anyone you want to access the encrypted message:</p>
+            <div className="share-container">
+              <div className="url-display">
+                <input
+                  type="text"
+                  value={shareableUrl}
+                  readOnly
+                  onClick={(e) => e.target.select()}
+                />
+                <button 
+                  className="push-button"
+                  style={{ width: '100%' }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(shareableUrl);
+                  }}
+                >
+                  <span className="shadow"></span>
+                  <span className="edge"></span>
+                  <span className="front">Copy</span>
+                </button>
+              </div>
+              <p className="warning-text">
+                This link contains the decryption key in the URL fragment (#).
+                The server never sees this key. Share this complete URL securely.
+              </p>
+            </div>
           </div>
-          <p className="warning-text">
-            This link contains the decryption key in the URL fragment (#).
-            The server never sees this key. Share this complete URL securely.
-          </p>
         </div>
       )}
     </div>
@@ -491,6 +551,40 @@ const App = () => {
           <pre><code className={`language-${contentType}`}>{decryptedContent}</code></pre>
         )}
       </div>
+      
+      <div className="view-actions">
+        <button 
+          onClick={() => {
+            // Update the URL to the root path to reset
+            window.history.pushState({}, '', '/');
+            
+            // Reset all state to initial values
+            setMode('create');
+            setMessageText('');
+            setTitle('');
+            setExpirationPeriod('day');
+            setBurnAfterReading(false);
+            setShareableUrl('');
+            setCountdown(15);
+            setMessageDetails(null);
+            setStatusMessage('');
+            setContentType('text');
+            setDecryptedContent('');
+            setIsDecrypting(false);
+            setIsFormLocked(false);
+            setShowPopup(false);
+            setDecryptionError(null);
+            
+            // Reset document title
+            document.title = 'Encrypted Messages';
+          }} 
+          className="push-button create-new-btn"
+        >
+          <span className="shadow"></span>
+          <span className="edge"></span>
+          <span className="front">Create New Message</span>
+        </button>
+      </div>
     </div>
   );
 
@@ -504,21 +598,94 @@ const App = () => {
           style={{ width: `${(countdown / 15) * 100}%` }}
         ></div>
       </div>
-      <button onClick={cancelBurnAfterReading} className="cancel-btn">
-        Cancel Auto-Deletion
-      </button>
+      <div className="countdown-actions">
+        <button onClick={cancelBurnAfterReading} className="push-button cancel-btn">
+          <span className="shadow"></span>
+          <span className="edge"></span>
+          <span className="front">Cancel Auto-Deletion</span>
+        </button>
+        <button 
+          onClick={() => {
+            // Update the URL to the root path to reset
+            window.history.pushState({}, '', '/');
+            
+            // Reset all state to initial values
+            setMode('create');
+            setMessageText('');
+            setTitle('');
+            setExpirationPeriod('day');
+            setBurnAfterReading(false);
+            setShareableUrl('');
+            setCountdown(15);
+            setMessageDetails(null);
+            setStatusMessage('');
+            setContentType('text');
+            setDecryptedContent('');
+            setIsDecrypting(false);
+            setIsFormLocked(false);
+            setShowPopup(false);
+            setDecryptionError(null);
+            
+            // Reset document title
+            document.title = 'Encrypted Messages';
+          }} 
+          className="push-button create-new-btn"
+        >
+          <span className="shadow"></span>
+          <span className="edge"></span>
+          <span className="front">Create New Message</span>
+        </button>
+      </div>
       <div className="message-content">
-        {renderViewMessage()}
+        {contentType === 'markdown' ? (
+          <div dangerouslySetInnerHTML={{ __html: decryptedContent }} />
+        ) : (
+          <pre><code className={`language-${contentType}`}>{decryptedContent}</code></pre>
+        )}
       </div>
     </div>
   );
 
   const renderNotFound = () => (
     <div className="not-found">
+      <div className="not-found-icon">📝❌</div>
       <h1>Message Not Found</h1>
-      <p>The message you are looking for has expired, been deleted, or never existed.</p>
-      <button onClick={() => setMode('create')} className="go-back-btn">
-        Create New Message
+      <p>This message may have:</p>
+      <ul>
+        <li>Expired (messages automatically expire after their set time period)</li>
+        <li>Been deleted (burn-after-reading messages are permanently removed)</li>
+        <li>Never existed (the URL might be incorrect)</li>
+      </ul>
+      <button 
+        onClick={() => {
+          // Update the URL to the root path to reset
+          window.history.pushState({}, '', '/');
+          
+          // Reset all state to initial values
+          setMode('create');
+          setMessageText('');
+          setTitle('');
+          setExpirationPeriod('day');
+          setBurnAfterReading(false);
+          setShareableUrl('');
+          setCountdown(15);
+          setMessageDetails(null);
+          setStatusMessage('');
+          setContentType('text');
+          setDecryptedContent('');
+          setIsDecrypting(false);
+          setIsFormLocked(false);
+          setShowPopup(false);
+          setDecryptionError(null);
+          
+          // Reset document title
+          document.title = 'Encrypted Messages';
+        }} 
+        className="push-button go-back-btn"
+      >
+        <span className="shadow"></span>
+        <span className="edge"></span>
+        <span className="front">Create New Message</span>
       </button>
     </div>
   );
@@ -526,16 +693,21 @@ const App = () => {
   // Main render
   return (
     <div className="app-container">
-      {statusMessage && <div className="status-message">{statusMessage}</div>}
-      
-      {isDecrypting ? (
-        <div className="loading">Decrypting message...</div>
+      {mode === 'notFound' ? (
+        renderNotFound()
+      ) : isDecrypting ? (
+        <div className="loading">
+          <span className="loading-text">Decrypting message...</span>
+        </div>
+      ) : decryptionError ? (
+        <div className="error-message">
+          <span className="error-text">{decryptionError}</span>
+        </div>
       ) : (
         <>
           {mode === 'create' && renderCreateForm()}
           {mode === 'view' && renderViewMessage()}
           {mode === 'countdown' && renderCountdown()}
-          {mode === 'notFound' && renderNotFound()}
         </>
       )}
       
