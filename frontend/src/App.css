@@ -1,0 +1,297 @@
+/* App.css - Styled to match wireframe */
+
+:root {
+  --clipboard-color: #f1d184;
+  --button-color: #ffffff;
+  --button-text: #000000;
+  --button-border: #000000;
+  --text-color: #1a1a1a;
+  --background-color: #f5f5f5;
+}
+
+.app-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.create-container {
+  background-color: #fefefe;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  position: relative;
+  margin-top: 20px;
+}
+
+/* Create the clipboard design from the wireframe */
+.create-container:before {
+  content: "";
+  position: absolute;
+  top: -20px;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background-color: var(--clipboard-color);
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  z-index: -1;
+}
+
+/* The clipboard clip */
+.create-container:after {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 15px;
+  background-color: #ffffff;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+  color: var(--text-color);
+  margin-top: 10px;
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+  text-align: center;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+input[type="text"],
+textarea,
+select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+}
+
+.message-textarea {
+  min-height: 200px;
+  resize: vertical;
+  font-family: monospace;
+  background-color: rgba(255, 255, 255, 0.4);
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-group input {
+  margin-right: 10px;
+}
+
+.checkbox-group label {
+  margin-bottom: 0;
+}
+
+.expiration-options {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.expiration-option {
+  display: flex;
+  align-items: center;
+}
+
+.expiration-option input {
+  margin-right: 5px;
+}
+
+.submit-btn {
+  background-color: var(--button-color);
+  color: var(--button-text);
+  padding: 10px 20px;
+  border: 1px solid var(--button-border);
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+  display: block;
+  margin-left: auto;
+  margin-top: 20px;
+  transition: background-color 0.2s;
+}
+
+.submit-btn:hover {
+  background-color: #f8f8f8;
+}
+
+.share-container {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+}
+
+.url-display {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.url-display input {
+  flex-grow: 1;
+  margin-right: 10px;
+}
+
+.url-display button {
+  background-color: var(--button-color);
+  color: var(--button-text);
+  border: 1px solid var(--button-border);
+  padding: 0 15px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.warning-text {
+  color: #666;
+  font-size: 14px;
+}
+
+.view-container {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.message-info {
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: #666;
+}
+
+.message-content {
+  background-color: #f9f9f9;
+  padding: 15px;
+  border-radius: 4px;
+  max-height: 70vh;
+  overflow-y: auto;
+  border: 1px solid #eee;
+}
+
+.message-content pre {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.countdown-container {
+  text-align: center;
+  padding: 20px;
+}
+
+.countdown-progress {
+  width: 100%;
+  height: 10px;
+  background-color: #eee;
+  border-radius: 5px;
+  margin: 15px 0;
+  overflow: hidden;
+}
+
+.countdown-bar {
+  height: 100%;
+  background-color: #ff6b6b;
+  transition: width 1s linear;
+}
+
+.cancel-btn {
+  background-color: var(--button-color);
+  color: var(--button-text);
+  border: 1px solid var(--button-border);
+  padding: 8px 16px;
+  margin-bottom: 20px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.status-message {
+  padding: 10px;
+  margin-bottom: 20px;
+  border-radius: 4px;
+  text-align: center;
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+.not-found {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.go-back-btn {
+  background-color: var(--button-color);
+  color: var(--button-text);
+  border: 1px solid var(--button-border);
+  padding: 10px 20px;
+  cursor: pointer;
+  margin-top: 20px;
+  border-radius: 4px;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px 20px;
+  font-size: 18px;
+  color: #666;
+}
+
+/* Footer styles */
+.footer {
+  margin-top: auto;
+  padding: 20px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #727272;
+}
+
+/* Modify select styling to display the radio buttons for expiration options */
+.expiration-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin: 15px 0;
+}
+
+.expiration-option {
+  display: flex;
+  align-items: center;
+}
+
+.expiration-option input[type="radio"] {
+  margin-right: 5px;
+}
+
+/* Media query for responsive design */
+@media (max-width: 600px) {
+  .create-container {
+    padding: 15px;
+  }
+  
+  .url-display {
+    flex-direction: column;
+  }
+  
+  .url-display input {
+    margin-right: 0;
+    margin-bottom: 10px;
+  }
+}

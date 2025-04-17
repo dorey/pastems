@@ -1,0 +1,56 @@
+-- Create messages table
+CREATE TABLE messages (
+    id BIGSERIAL PRIMARY KEY,
+    uid TEXT NOT NULL UNIQUE,
+    encrypted_data TEXT NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    burn_after_reading BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT uid_check CHECK (char_length(uid) >= 8 AND char_length(uid) <= 32)
+);
+
+-- Create index on expires_at for efficient cleanup
+CREATE INDEX idx_messages_expires_at ON messages(expires_at);
+
+-- Create index on uid for fast lookups
+CREATE INDEX idx_messages_uid ON messages(uid);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+
+-- Create a policy that allows anyone to view messages
+CREATE POLICY "Anyone can view messages" ON messages FOR SELECT USING (true);
+
+-- Create a policy that allows only authenticated users to create messages
+CREATE POLICY "Only authenticated users can create messages" ON messages FOR INSERT TO authenticated USING (true);
+
+-- Create a policy that allows anyone to delete their own messages (burn after reading)
+CREATE POLICY "Anyone can delete their own messages" ON messages FOR DELETE USING (true);
+
+-- Create a function to automatically delete expired messages
+CREATE OR REPLACE FUNCTION delete_expired_messages()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM messages WHERE expires_at < NOW();
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create a trigger to run the cleanup function periodically
+CREATE TRIGGER trigger_delete_expired_messages
+AFTER INSERT ON messages
+EXECUTE PROCEDURE delete_expired_messages();
+
+-- Create a function to delete messages after a certain period of time
+CREATE OR REPLACE FUNCTION schedule_message_expiration()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Schedule the message to be deleted
+    PERFORM pg_sleep(extract(epoch from (NEW.expires_at - NOW())));
+    DELETE FROM messages WHERE uid = NEW.uid;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Enable the pgcrypto extension for additional cryptographic functions
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
