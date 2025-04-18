@@ -24,19 +24,32 @@ load_dotenv()
 
 # Initialize Supabase client if available
 try:
-    from supabase import create_client, Client
+    # New import for Supabase v2.x
+    from supabase.client import create_client, Client
+    
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+    
     if SUPABASE_URL and SUPABASE_KEY:
+        # Initialize client with new v2.x method
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        using_supabase = True
-        logger.info("Supabase client initialized successfully")
+        
+        # Test connection to verify it works
+        try:
+            # Simple query to test connection
+            test_response = supabase.table("messages").select("*").limit(1).execute()
+            logger.info(f"Supabase connection test successful")
+            using_supabase = True
+        except Exception as e:
+            logger.error(f"Supabase connection test failed: {e}")
+            using_supabase = False
+            logger.warning("Falling back to in-memory storage due to connection error")
     else:
         using_supabase = False
         logger.warning("Supabase credentials not found, using in-memory storage")
-except ImportError:
+except ImportError as e:
     using_supabase = False
-    logger.warning("Supabase package not installed, using in-memory storage")
+    logger.warning(f"Supabase package import error: {e}, using in-memory storage")
 
 # Initialize FastAPI app
 app = FastAPI(title="Encrypted Message Service")
@@ -94,21 +107,26 @@ class MessageResponse(BaseModel):
 # Database operations
 async def cleanup_expired_messages():
     """Remove messages that have expired from the database"""
-    now = datetime.utcnow().isoformat()
+    # Use consistent UTC format for all datetime operations
+    now = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
     
     if using_supabase:
         # Delete expired messages in Supabase
         try:
+            # Use string comparison for consistency
             supabase.table("messages").delete().lt("expires_at", now).execute()
+            logger.info(f"Cleaned up expired messages before {now}")
         except Exception as e:
             logger.error(f"Error cleaning up expired messages in Supabase: {e}")
     else:
         # Clean up in-memory store
         global message_store
+        now_dt = datetime.utcnow()
         expired_uids = [uid for uid, msg in message_store.items() 
-                      if msg["expires_at"] < datetime.utcnow()]
+                      if isinstance(msg["expires_at"], datetime) and msg["expires_at"] < now_dt]
         for uid in expired_uids:
             del message_store[uid]
+            logger.info(f"Deleted expired message {uid}")
 
 # Routes
 @app.post("/api/paste", response_model=dict)
@@ -122,13 +140,17 @@ async def create_message(message: MessageCreate):
             if len(response.data) > 0:
                 raise HTTPException(status_code=400, detail="Message ID already exists")
             
+            # Format dates consistently with Z suffix (UTC)
+            expires_at_iso = message.expiresAt.replace(microsecond=0).isoformat() + 'Z'
+            created_at_iso = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
+            
             # Insert the new message
             response = supabase.table("messages").insert({
                 "uid": message.uid,
                 "encrypted_data": message.encryptedData,
-                "expires_at": message.expiresAt.isoformat(),
+                "expires_at": expires_at_iso,
                 "burn_after_reading": message.burnAfterReading,
-                "created_at": datetime.utcnow().isoformat()
+                "created_at": created_at_iso
             }).execute()
         else:
             # Store in memory
@@ -166,11 +188,36 @@ async def get_message(uid: str):
             
             message = response.data[0]
             
-            return {
-                "encryptedData": message["encrypted_data"],
-                "expiresAt": message["expires_at"],
-                "burnAfterReading": message["burn_after_reading"]
-            }
+            # Handle date parsing for consistent datetime handling
+            try:
+                # If it's a string, parse it to datetime
+                if isinstance(message["expires_at"], str):
+                    # Remove Z suffix and add timezone info for consistent comparison
+                    expires_at_str = message["expires_at"].replace("Z", "+00:00")
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                else:
+                    # If it's already a datetime, use it directly
+                    expires_at = message["expires_at"]
+                
+                logger.info(f"Successfully parsed expires_at for message {uid}")
+                
+                return {
+                    "encryptedData": message["encrypted_data"],
+                    "expiresAt": expires_at,
+                    "burnAfterReading": message["burn_after_reading"]
+                }
+            except Exception as e:
+                # Fallback: return as string to prevent comparison issues
+                logger.warning(f"Date parsing error for {uid}: {e}, returning raw string")
+                
+                # Use current time + 1 day as a fallback to prevent immediate expiry
+                fallback_date = datetime.utcnow() + timedelta(days=1)
+                
+                return {
+                    "encryptedData": message["encrypted_data"],
+                    "expiresAt": fallback_date,
+                    "burnAfterReading": message["burn_after_reading"]
+                }
         else:
             # Fetch from in-memory store
             if uid not in message_store:
