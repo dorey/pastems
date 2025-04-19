@@ -107,8 +107,8 @@ class MessageResponse(BaseModel):
 # Database operations
 async def cleanup_expired_messages():
     """Remove messages that have expired from the database"""
-    # Use consistent UTC format for all datetime operations
-    now = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
+    # Use consistent UTC format for all datetime operations - without Z suffix
+    now = datetime.utcnow().replace(microsecond=0).isoformat()
     
     if using_supabase:
         # Delete expired messages in Supabase
@@ -140,9 +140,13 @@ async def create_message(message: MessageCreate):
             if len(response.data) > 0:
                 raise HTTPException(status_code=400, detail="Message ID already exists")
             
-            # Format dates consistently with Z suffix (UTC)
-            expires_at_iso = message.expiresAt.replace(microsecond=0).isoformat() + 'Z'
-            created_at_iso = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
+            # Format dates in PostgreSQL compatible timestamp format
+            # Use simple ISO format without timezone suffix - PostgreSQL will handle it correctly
+            expires_at_iso = message.expiresAt.replace(microsecond=0).isoformat()
+            created_at_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+            
+            # Log the timestamp format for debugging
+            logger.info(f"Using timestamp format: {expires_at_iso}")
             
             # Insert the new message
             response = supabase.table("messages").insert({
@@ -192,9 +196,18 @@ async def get_message(uid: str):
             try:
                 # If it's a string, parse it to datetime
                 if isinstance(message["expires_at"], str):
-                    # Remove Z suffix and add timezone info for consistent comparison
-                    expires_at_str = message["expires_at"].replace("Z", "+00:00")
-                    expires_at = datetime.fromisoformat(expires_at_str)
+                    # Handle potential timezone markers (Z, +00:00) for compatibility
+                    expires_at_str = message["expires_at"]
+                    # Remove Z suffix if it exists
+                    if expires_at_str.endswith('Z'):
+                        expires_at_str = expires_at_str[:-1]
+                    # Try to parse the datetime
+                    try:
+                        expires_at = datetime.fromisoformat(expires_at_str)
+                    except ValueError:
+                        # Fallback for older formats
+                        logger.warning(f"Using fallback date parsing for: {expires_at_str}")
+                        expires_at = datetime.strptime(expires_at_str, "%Y-%m-%dT%H:%M:%S")
                 else:
                     # If it's already a datetime, use it directly
                     expires_at = message["expires_at"]
